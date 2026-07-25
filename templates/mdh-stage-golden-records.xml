@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+<!--
+  Boomi DataHub (MDH) :: Update Golden Records (Stage)
+  ====================================================
+  POST {hubBaseUrl}/universes/{universeId}/staging/{stagingCode}
+  Stages a batch of source entities into a staging area (instead of committing them straight to
+  the domain), so a steward can review the potential effect before incorporation. This is the
+  staging path behind the Boomi Data Hub connector's Update Golden Records operation when a
+  "Staging Area ID" is supplied. Same request body and async/returnEntities behaviour as the
+  plain Update Golden Records operation; only the endpoint (and the stagingCode segment) differ.
+
+  REQUEST BODY: the current message MUST already be the <batch src="..."> payload (identical to
+  Update Golden Records). Build it before calling this template. Do NOT use "*MDM*" as the src.
+
+  Async (default) returns 202 with the batch-update resource URL as the body (last path segment =
+  batchId); poll status with mdh-get-batch-update-status.
+
+  Params:
+    hubBaseUrl     (req) e.g. https://c01-usa-east.hub.boomi.com/mdm
+    universeId     (req) universe (domain) UUID
+    stagingCode    (req) staging area code (Sources tab of the deployed model), e.g. SFStaging
+    authorization  (req) "Basic <base64(user:token)>" or "Bearer <jwt>"
+    repositoryId   (opt) JWT/bearer auth only
+    async          (opt) "true" (recommended) return immediately; "false" wait for completion
+    returnEntities (opt) "true" include per-entity detail in the response (only when async=false)
+-->
+<template name="mdh-stage-golden-records"
+    xmlns="http://ws.apache.org/ns/synapse">
+    <parameter name="hubBaseUrl"/>
+    <parameter name="universeId"/>
+    <parameter name="stagingCode"/>
+    <parameter name="authorization"/>
+    <parameter name="repositoryId"/>
+    <parameter name="async"/>
+    <parameter name="returnEntities"/>
+    <sequence>
+        <property name="uri.var.hubBaseUrl" expression="$func:hubBaseUrl"/>
+        <property name="uri.var.universeId" expression="$func:universeId"/>
+        <property name="uri.var.stagingCode" expression="$func:stagingCode"/>
+
+        <filter xpath="string-length(normalize-space($func:repositoryId)) &gt; 0">
+            <then>
+                <property name="uri.var.repositoryId" expression="$func:repositoryId"/>
+            </then>
+        </filter>
+        <filter xpath="string-length(normalize-space($func:async)) &gt; 0">
+            <then>
+                <property name="uri.var.async" expression="$func:async"/>
+            </then>
+        </filter>
+        <filter xpath="string-length(normalize-space($func:returnEntities)) &gt; 0">
+            <then>
+                <property name="uri.var.returnEntities" expression="$func:returnEntities"/>
+            </then>
+        </filter>
+
+        <property name="Authorization" expression="$func:authorization" scope="transport"/>
+        <property name="Accept" value="application/xml" scope="transport"/>
+        <property name="messageType" value="application/xml" scope="axis2"/>
+        <property name="ContentType" value="application/xml" scope="axis2"/>
+        <property name="HTTP_METHOD" value="POST" scope="axis2"/>
+        <property name="REST_URL_POSTFIX" scope="axis2" action="remove"/>
+
+        <call>
+            <endpoint>
+                <http method="post" uri-template="{+uri.var.hubBaseUrl}/universes/{uri.var.universeId}/staging/{uri.var.stagingCode}{?uri.var.repositoryId,uri.var.async,uri.var.returnEntities}">
+                    <timeout>
+                        <duration>120000</duration>
+                        <responseAction>fault</responseAction>
+                    </timeout>
+                    <suspendOnFailure>
+                        <initialDuration>-1</initialDuration>
+                        <progressionFactor>1</progressionFactor>
+                        <maximumDuration>0</maximumDuration>
+                    </suspendOnFailure>
+                    <markForSuspension>
+                        <errorCodes>-1</errorCodes>
+                        <retriesBeforeSuspension>0</retriesBeforeSuspension>
+                    </markForSuspension>
+                </http>
+            </endpoint>
+        </call>
+    </sequence>
+</template>

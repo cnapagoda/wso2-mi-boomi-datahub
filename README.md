@@ -1,6 +1,7 @@
 # WSO2 Micro Integrator templates for Boomi DataHub (MDH)
 
-[![License: Apache 2.0]()](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
 
 Seven reusable Synapse **sequence templates** wrapping the Boomi DataHub Repository API,
 plus a sample REST API and shared config/fault sequences that show how to wire them up.
@@ -19,6 +20,8 @@ All paths are relative to the Hub base, e.g. `https://c01-usa-east.hub.boomi.com
 | `mdh-get-golden-record` | GET | `/universes/{u}/records/{recordId}` | — |
 | `mdh-get-quarantine-entry` | GET | `/universes/{u}/quarantine/sources/{sourceId}/entities/{entityId}` | — |
 | `mdh-update-golden-records` | POST | `/universes/{u}/records` | `<batch src="...">` |
+| `mdh-stage-golden-records` | POST | `/universes/{u}/staging/{stagingCode}` | `<batch src="...">` |
+| `mdh-get-batch-update-status` | GET | `/universes/{u}/records/updates/{batchId}` | — |
 | `mdh-query-golden-records` | POST | `/universes/{u}/records/query` | `<RecordQueryRequest>` |
 | `mdh-query-quarantine-entries` | POST | `/universes/{u}/quarantine/query` | `<QuarantineQueryRequest>` |
 | `mdh-fetch-channel-updates` | POST | `/universes/{u}/sources/{sourceId}/updates` then `/updates/{updateId}` | — (empty) |
@@ -47,12 +50,17 @@ Two names don't map where you'd expect in Boomi's own API grouping, so a heads-u
 
 ## Files
 
+These are standalone Synapse artifacts — copy them into your own MI project's artifact folders
+(see Deploy). The repository layout is flat:
+
 ```
-boomi-mdh-mi/
+wso2-mi-boomi-datahub/
 ├── templates/
 │   ├── mdh-get-golden-record.xml
 │   ├── mdh-get-quarantine-entry.xml
 │   ├── mdh-update-golden-records.xml
+│   ├── mdh-stage-golden-records.xml             # stage a batch (Update w/ Staging Area ID)
+│   ├── mdh-get-batch-update-status.xml          # poll async Update/Stage batch status
 │   ├── mdh-query-golden-records.xml
 │   ├── mdh-query-quarantine-entries.xml
 │   ├── mdh-fetch-channel-updates.xml            # single fetch (you drive ack + fetch)
@@ -64,6 +72,9 @@ boomi-mdh-mi/
 │   └── boomi-mdh-fault.xml     # returns 502 + <error> on transport/timeout failures
 ├── api/
 │   └── boomi-mdh-api.xml       # sample REST API delegating to the templates
+├── .github/workflows/
+│   └── xml-lint.yml            # CI: XML well-formedness check
+├── .gitignore
 ├── LICENSE                     # Apache License 2.0
 ├── NOTICE
 └── README.md
@@ -74,7 +85,7 @@ boomi-mdh-mi/
 Drop the artifacts into your MI project (MI 4.x layout):
 
 ```
-src/main/wso2mi/artifacts/templates/    <- the 9 mdh-*.xml
+src/main/wso2mi/artifacts/templates/    <- the 11 mdh-*.xml
 src/main/wso2mi/artifacts/sequences/    <- boomi-mdh-init.xml, boomi-mdh-fault.xml
 src/main/wso2mi/artifacts/apis/         <- boomi-mdh-api.xml
 ```
@@ -109,6 +120,10 @@ boomi_mdh_token      Hub Repository API token
 ```
 
 `boomi-mdh-init` reads them and builds `Authorization: Basic base64(username:token)`.
+
+> **Security note:** the built credential lives in the `MDH_AUTHORIZATION` synapse property and is
+> sent as a transport header, so it can surface if you enable DEBUG/wire logging. Keep wire-level
+> logging off in production, and prefer JWT/bearer where your Hub supports it.
 
 **universeId** — the universe (domain) UUID. In the sample API it's passed per request as
 `?universeId=...` (different domains = different UUIDs). From the Hub UI it's the ID in the

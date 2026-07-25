@@ -1,0 +1,40 @@
+name: XML well-formedness
+
+# Catches malformed Synapse artifacts before merge — including the illegal "--" inside
+# XML comments class of bug, which parses fine in an editor but breaks MI deployment.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  xmllint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install xmllint
+        run: sudo apt-get update && sudo apt-get install -y libxml2-utils
+
+      - name: Check all XML artifacts are well-formed
+        run: |
+          set -e
+          found=0
+          fail=0
+          while IFS= read -r -d '' f; do
+            found=1
+            if xmllint --noout "$f"; then
+              echo "OK   $f"
+            else
+              echo "FAIL $f"
+              fail=1
+            fi
+          done < <(find templates sequences api -name '*.xml' -print0)
+          if [ "$found" -eq 0 ]; then
+            echo "No XML files found to check"; exit 1
+          fi
+          if [ "$fail" -ne 0 ]; then
+            echo "One or more XML files are not well-formed"; exit 1
+          fi
+          echo "All XML artifacts are well-formed"

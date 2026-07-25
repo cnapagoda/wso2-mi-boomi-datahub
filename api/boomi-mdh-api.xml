@@ -31,6 +31,8 @@
     POST /boomi-mdh/sources/CRM_SYSTEM/updates/<batchId>?universeId=u   (ack that batch + fetch next)
     POST /boomi-mdh/sources/CRM_SYSTEM/next-update?universeId=u         (fetch + ack, return the batch)
     POST /boomi-mdh/sources/CRM_SYSTEM/updates/<batchId>/acknowledge?universeId=u   (acknowledge only)
+    POST /boomi-mdh/staging/<stagingCode>?universeId=u     (body: <batch src="CRM_SYSTEM">...)
+    GET  /boomi-mdh/batch-updates/<batchId>?universeId=u   (async Update/Stage status)
     POST /boomi-mdh/match?universeId=u                     (body: <batch src="CRM_SYSTEM">...)
 -->
 <api xmlns="http://ws.apache.org/ns/synapse" name="BoomiMdhApi" context="/boomi-mdh">
@@ -222,6 +224,47 @@
                 <with-param name="repositoryId" value="{$ctx:query.param.repositoryId}"/>
                 <with-param name="async" value="{$ctx:query.param.async}"/>
                 <with-param name="returnEntities" value="{$ctx:query.param.returnEntities}"/>
+            </call-template>
+            <respond/>
+        </inSequence>
+        <faultSequence>
+            <sequence key="boomi-mdh-fault"/>
+        </faultSequence>
+    </resource>
+
+    <!-- ===================== Update Golden Records (Stage) ====================== -->
+    <!-- Same as /golden-records but stages the batch into {stagingCode} for review. -->
+    <resource methods="POST" uri-template="/staging/{stagingCode}">
+        <inSequence>
+            <sequence key="boomi-mdh-init"/>
+            <call-template target="mdh-stage-golden-records">
+                <with-param name="hubBaseUrl" value="{get-property('MDH_HUB_BASE_URL')}"/>
+                <with-param name="universeId" value="{$ctx:query.param.universeId}"/>
+                <with-param name="stagingCode" value="{$ctx:uri.var.stagingCode}"/>
+                <with-param name="authorization" value="{get-property('MDH_AUTHORIZATION')}"/>
+                <with-param name="repositoryId" value="{$ctx:query.param.repositoryId}"/>
+                <with-param name="async" value="{$ctx:query.param.async}"/>
+                <with-param name="returnEntities" value="{$ctx:query.param.returnEntities}"/>
+            </call-template>
+            <respond/>
+        </inSequence>
+        <faultSequence>
+            <sequence key="boomi-mdh-fault"/>
+        </faultSequence>
+    </resource>
+
+    <!-- ======================= Get Batch Update Status ========================== -->
+    <!-- Poll an async Update/Stage: batchId = last segment of the 202 batch-update URL. -->
+    <resource methods="GET" uri-template="/batch-updates/{batchId}">
+        <inSequence>
+            <sequence key="boomi-mdh-init"/>
+            <call-template target="mdh-get-batch-update-status">
+                <with-param name="hubBaseUrl" value="{get-property('MDH_HUB_BASE_URL')}"/>
+                <with-param name="universeId" value="{$ctx:query.param.universeId}"/>
+                <with-param name="batchId" value="{$ctx:uri.var.batchId}"/>
+                <with-param name="authorization" value="{get-property('MDH_AUTHORIZATION')}"/>
+                <with-param name="repositoryId" value="{$ctx:query.param.repositoryId}"/>
+                <with-param name="includeEntities" value="{$ctx:query.param.includeEntities}"/>
             </call-template>
             <respond/>
         </inSequence>

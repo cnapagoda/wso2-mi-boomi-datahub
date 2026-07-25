@@ -38,8 +38,11 @@
   at-least-once, call mdh-fetch-channel-updates and mdh-acknowledge-channel-updates separately and
   acknowledge only after the batch has been safely processed downstream.
 
-  After it returns, this synapse-scope property is set:
-    MDH_ACK_ID - id of the batch fetched and acknowledged (empty if nothing was pending)
+  After it returns, these synapse-scope properties are set:
+    MDH_ACK_ID     - id of the batch fetched and acknowledged (empty if nothing was pending)
+    MDH_ACK_FAILED - "true" if the acknowledge call returned a non-2xx status. In that case the
+                     body is an <error> (not the batch) and the HTTP status is 502; the batch was
+                     NOT acknowledged and Boomi will redeliver it on the next fetch.
 
   Reuses mdh-fetch-channel-updates and mdh-acknowledge-channel-updates, so BOTH must be deployed.
 
@@ -105,13 +108,41 @@
                     <with-param name="repositoryId" value="{$ctx:MDH_REPO}"/>
                 </call-template>
 
-                <!-- 2c) restore the original fetched batch as the response body -->
-                <enrich>
-                    <source clone="true" type="property" property="MDH_BATCH_BACKUP"/>
-                    <target type="body"/>
-                </enrich>
+                <!-- 2c) Only treat the batch as consumed if the acknowledge actually succeeded.
+                        Boomi 4xx/5xx come back through <call> as normal responses, not faults, so
+                        without this check a failed ack would still be returned as if delivered
+                        (and the batch would silently reappear on the next fetch). -->
+                <filter xpath="$axis2:HTTP_SC &gt;= 200 and $axis2:HTTP_SC &lt; 300">
+                    <then>
+                        <!-- ack OK: restore and return the original fetched batch -->
+                        <enrich>
+                            <source clone="true" type="property" property="MDH_BATCH_BACKUP"/>
+                            <target type="body"/>
+                        </enrich>
+                    </then>
+                    <else>
+                        <!-- ack FAILED: surface an error instead of pretending the batch was
+                             delivered. The batch was NOT acknowledged and Boomi will redeliver it. -->
+                        <property name="MDH_ACK_FAILED" value="true"/>
+                        <payloadFactory media-type="xml">
+                            <format>
+                                <error xmlns="">
+                                    <message>Fetched batch was NOT acknowledged; it will be redelivered on the next fetch.</message>
+                                    <batchId>$1</batchId>
+                                    <acknowledgeHttpStatus>$2</acknowledgeHttpStatus>
+                                </error>
+                            </format>
+                            <args>
+                                <arg expression="$ctx:MDH_ACK_ID"/>
+                                <arg expression="$axis2:HTTP_SC"/>
+                            </args>
+                        </payloadFactory>
+                        <property name="HTTP_SC" value="502" scope="axis2"/>
+                    </else>
+                </filter>
             </then>
         </filter>
-        <!-- 3) Body now holds the original <batch> (acknowledged), or the empty 204 response. -->
+        <!-- 3) Body holds the original <batch> (acknowledged), an <error> (ack failed), or the
+               empty 204 response when nothing was pending. -->
     </sequence>
 </template>
