@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+<!--
+  Resolves connection config once per request:
+    MDH_HUB_BASE_URL   - the Hub Cloud base for your repository's region (see list below)
+    MDH_AUTHORIZATION  - a Basic auth header built from vault secrets
+
+  Secure Vault entries expected (conf/security + registry, or the MI dashboard):
+    boomi_mdh_username  - Hub Repository API username
+    boomi_mdh_token     - Hub Repository API token
+
+  For JWT/bearer instead of basic, set MDH_AUTHORIZATION to 'Bearer <jwt>' and pass a
+  repositoryId query param on the API calls (basic auth does not need repositoryId).
+-->
+<sequence name="boomi-mdh-init"
+  xmlns="http://ws.apache.org/ns/synapse">
+  <!-- CHANGE THIS to the Hub Cloud base URL for your repository's region. Options:
+           https://c01-usa-east.hub.boomi.com/mdm    (USA East)
+           https://c02-usa-east.hub.boomi.com/mdm    (USA East 02)
+           https://c01-ca.hub.boomi.com/mdm          (Canada)
+           https://c01-gbr.hub.boomi.com/mdm         (GBR)
+           https://c01-gbr.hub.gb.boomi.com/mdm      (GB)
+           https://c01-deu.hub.boomi.com/mdm         (DEU)
+           https://c01-sg.hub.boomi.com/mdm          (Singapore)
+           https://c01-jp.hub.boomi.com/mdm          (Japan)
+           https://c01-aus.hub.boomi.com/mdm         (Australia)
+         Find your region from the repository URL in the Hub UI. -->
+  <property name="MDH_HUB_BASE_URL" value="https://c01-usa-east.hub.boomi.com/mdm" scope="default"/>
+  <!-- Vault properties -->
+  <property name="mdh.user" expression="wso2:vault-lookup('boomi_mdh_username')" scope="default"/>
+  <property name="mdh.token" expression="wso2:vault-lookup('boomi_mdh_token')" scope="default"/>
+  <!-- file properties
+  <property name="mdh.user" expression="get-property('file', 'boomi_mdh_username')" scope="default"/>
+  <property name="mdh.token" expression="get-property('file', 'boomi_mdh_token')" scope="default"/>
+   -->
+  <property name="MDH_AUTHORIZATION" expression="concat('Basic ', base64Encode(concat(get-property('mdh.user'), ':', get-property('mdh.token'))))" scope="default"/>
+</sequence>

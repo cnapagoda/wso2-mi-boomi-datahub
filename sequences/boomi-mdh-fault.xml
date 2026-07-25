@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+<!--
+  Handles mediation-level faults (connection refused, timeout, DNS, etc.).
+  NOTE: a Boomi 4xx/5xx is NOT a mediation fault - the <call> mediator returns it as a
+  normal response and the API layer passes the Boomi status + <error> body straight
+  through. This sequence only fires when the HTTP call itself could not complete.
+-->
+<sequence name="boomi-mdh-fault"
+    xmlns="http://ws.apache.org/ns/synapse">
+    <property name="HTTP_SC" value="502" scope="axis2"/>
+    <payloadFactory media-type="xml">
+        <format>
+            <error xmlns="">
+                <source>boomi-mdh-connector</source>
+                <message>$1</message>
+                <detail>$2</detail>
+            </error>
+        </format>
+        <args>
+            <arg expression="$ctx:ERROR_MESSAGE"/>
+            <arg expression="$ctx:ERROR_DETAIL"/>
+        </args>
+    </payloadFactory>
+    <property name="messageType" value="application/xml" scope="axis2"/>
+    <property name="ContentType" value="application/xml" scope="axis2"/>
+    <respond/>
+</sequence>

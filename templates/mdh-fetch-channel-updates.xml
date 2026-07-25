@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+<!--
+  Boomi DataHub (MDH) :: Fetch Channel Updates
+  ========================================
+  POST {hubBaseUrl}/universes/{universeId}/sources/{sourceId}/updates            (first fetch)
+  POST {hubBaseUrl}/universes/{universeId}/sources/{sourceId}/updates/{updateId} (ack + fetch next)
+  Fetches the next batch (<=200) of outbound source-record update requests for a source's
+  channel. Returns 200 with a <batch id="N" fmt="FULL|DIFF" src="..."> body, or 204 when
+  there is nothing pending.
+
+  ACK-AND-FETCH PATTERN: the trailing {updateId} segment acknowledges a PREVIOUS batch.
+    - First call:       OMIT updateId  ->  POST .../updates        (nothing to acknowledge)
+    - Subsequent calls: updateId = the "id" attribute of the <batch> returned last time
+                        ->  POST .../updates/{id}  (acknowledges that batch, returns the next)
+  Do NOT pass updateId=0 for the first call: Boomi reads 0 as a real batch id to acknowledge
+  and rejects it ("There is no update with id '0'..."). Leave updateId empty instead.
+  Until a batch is acknowledged, repeated fetches keep returning that SAME batch.
+  This template sends no request body (NO_ENTITY_BODY).
+
+  Params:
+    hubBaseUrl    (req) e.g. https://c01-usa-east.hub.boomi.com/mdm
+    universeId    (req) universe (domain) UUID
+    sourceId      (req) target/consuming source ID
+    updateId      (opt) empty on first fetch; else the previous batch id to acknowledge
+    authorization (req) "Basic <base64(user:token)>" or "Bearer <jwt>"
+    repositoryId  (opt) JWT/bearer auth only
+    limit         (opt) max update requests in the batch (default/max 200)
+-->
+<template name="mdh-fetch-channel-updates"
+    xmlns="http://ws.apache.org/ns/synapse">
+    <parameter name="hubBaseUrl"/>
+    <parameter name="universeId"/>
+    <parameter name="sourceId"/>
+    <parameter name="updateId"/>
+    <parameter name="authorization"/>
+    <parameter name="repositoryId"/>
+    <parameter name="limit"/>
+    <sequence>
+        <property name="uri.var.hubBaseUrl" expression="$func:hubBaseUrl"/>
+        <property name="uri.var.universeId" expression="$func:universeId"/>
+        <property name="uri.var.sourceId" expression="$func:sourceId"/>
+
+        <!-- updateId is optional: present => acknowledge that batch and fetch the next;
+             absent  => first/no-ack fetch. Build the trailing segment so the outbound URL
+             is either .../updates  or  .../updates/{id}. -->
+        <filter xpath="string-length(normalize-space($func:updateId)) &gt; 0">
+            <then>
+                <property name="uri.var.updatesPath" expression="concat('/updates/', normalize-space($func:updateId))"/>
+            </then>
+            <else>
+                <property name="uri.var.updatesPath" value="/updates"/>
+            </else>
+        </filter>
+
+        <filter xpath="string-length(normalize-space($func:repositoryId)) &gt; 0">
+            <then>
+                <property name="uri.var.repositoryId" expression="$func:repositoryId"/>
+            </then>
+        </filter>
+        <filter xpath="string-length(normalize-space($func:limit)) &gt; 0">
+            <then>
+                <property name="uri.var.limit" expression="$func:limit"/>
+            </then>
+        </filter>
+
+        <property name="Authorization" expression="$func:authorization" scope="transport"/>
+        <property name="Accept" value="application/xml" scope="transport"/>
+        <property name="HTTP_METHOD" value="POST" scope="axis2"/>
+        <property name="NO_ENTITY_BODY" value="true" scope="axis2" type="BOOLEAN"/>
+        <property name="REST_URL_POSTFIX" scope="axis2" action="remove"/>
+
+        <call>
+            <endpoint>
+                <http method="post" uri-template="{+uri.var.hubBaseUrl}/universes/{uri.var.universeId}/sources/{uri.var.sourceId}{+uri.var.updatesPath}{?uri.var.repositoryId,uri.var.limit}">
+                    <timeout>
+                        <duration>60000</duration>
+                        <responseAction>fault</responseAction>
+                    </timeout>
+                    <suspendOnFailure>
+                        <initialDuration>-1</initialDuration>
+                        <progressionFactor>1</progressionFactor>
+                        <maximumDuration>0</maximumDuration>
+                    </suspendOnFailure>
+                    <markForSuspension>
+                        <errorCodes>-1</errorCodes>
+                        <retriesBeforeSuspension>0</retriesBeforeSuspension>
+                    </markForSuspension>
+                </http>
+            </endpoint>
+        </call>
+    </sequence>
+</template>

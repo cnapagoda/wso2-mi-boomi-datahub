@@ -1,0 +1,233 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+<!--
+  Sample REST API that exposes the seven Boomi DataHub operations over HTTP by delegating
+  to the mdh-* sequence templates. This is a reference wiring - trim/rename as needed, or
+  call the templates directly from your own proxies/sequences with <call-template>.
+
+  universeId is always supplied as a query parameter (?universeId=...). For JWT/bearer auth
+  also pass ?repositoryId=...; for basic auth omit it.
+
+  Examples (basic auth, universe u=851a...54318):
+    GET /boomi-mdh/golden-records/0fc4eb6d-...4887?universeId=u
+    GET /boomi-mdh/quarantine/sources/CRM_SYSTEM/entities/CUST_12345?universeId=u
+    POST /boomi-mdh/golden-records?universeId=u            (body: <batch src="CRM_SYSTEM">...)
+    POST /boomi-mdh/golden-records/query?universeId=u      (body: <RecordQueryRequest>...)
+    POST /boomi-mdh/quarantine/query?universeId=u          (body: <QuarantineQueryRequest>...)
+    POST /boomi-mdh/sources/CRM_SYSTEM/updates?universeId=u             (first fetch; empty body)
+    POST /boomi-mdh/sources/CRM_SYSTEM/updates/<batchId>?universeId=u   (ack that batch + fetch next)
+    POST /boomi-mdh/sources/CRM_SYSTEM/next-update?universeId=u         (fetch + ack, return the batch)
+    POST /boomi-mdh/sources/CRM_SYSTEM/updates/<batchId>/acknowledge?universeId=u   (acknowledge only)
+    POST /boomi-mdh/match?universeId=u                     (body: <batch src="CRM_SYSTEM">...)
+-->
+<api xmlns="http://ws.apache.org/ns/synapse" name="BoomiMdhApi" context="/boomi-mdh">
+
+    <!-- ============================ Get Golden Record ============================ -->
+    <resource methods="GET" uri-template="/golden-records/{recordId}">
+        <inSequence>
+            <sequence key="boomi-mdh-init"/>
+            <call-template target="mdh-get-golden-record">
+                <with-param name="hubBaseUrl" value="{get-property('MDH_HUB_BASE_URL')}"/>
+                <with-param name="universeId" value="{$ctx:query.param.universeId}"/>
+                <with-param name="recordId" value="{$ctx:uri.var.recordId}"/>
+                <with-param name="authorization" value="{get-property('MDH_AUTHORIZATION')}"/>
+                <with-param name="repositoryId" value="{$ctx:query.param.repositoryId}"/>
+                <with-param name="includeReferenceTitle" value="{$ctx:query.param.includeReferenceTitle}"/>
+            </call-template>
+            <respond/>
+        </inSequence>
+        <faultSequence>
+            <sequence key="boomi-mdh-fault"/>
+        </faultSequence>
+    </resource>
+
+    <!-- ========================= Get Quarantine Entry =========================== -->
+    <resource methods="GET" uri-template="/quarantine/sources/{sourceId}/entities/{entityId}">
+        <inSequence>
+            <sequence key="boomi-mdh-init"/>
+            <call-template target="mdh-get-quarantine-entry">
+                <with-param name="hubBaseUrl" value="{get-property('MDH_HUB_BASE_URL')}"/>
+                <with-param name="universeId" value="{$ctx:query.param.universeId}"/>
+                <with-param name="sourceId" value="{$ctx:uri.var.sourceId}"/>
+                <with-param name="entityId" value="{$ctx:uri.var.entityId}"/>
+                <with-param name="authorization" value="{get-property('MDH_AUTHORIZATION')}"/>
+                <with-param name="repositoryId" value="{$ctx:query.param.repositoryId}"/>
+                <with-param name="includeData" value="{$ctx:query.param.includeData}"/>
+            </call-template>
+            <respond/>
+        </inSequence>
+        <faultSequence>
+            <sequence key="boomi-mdh-fault"/>
+        </faultSequence>
+    </resource>
+
+    <!-- ======================== Query Golden Records ============================ -->
+    <resource methods="POST" uri-template="/golden-records/query">
+        <inSequence>
+            <sequence key="boomi-mdh-init"/>
+            <call-template target="mdh-query-golden-records">
+                <with-param name="hubBaseUrl" value="{get-property('MDH_HUB_BASE_URL')}"/>
+                <with-param name="universeId" value="{$ctx:query.param.universeId}"/>
+                <with-param name="authorization" value="{get-property('MDH_AUTHORIZATION')}"/>
+                <with-param name="repositoryId" value="{$ctx:query.param.repositoryId}"/>
+                <with-param name="includeReferenceTitle" value="{$ctx:query.param.includeReferenceTitle}"/>
+            </call-template>
+            <respond/>
+        </inSequence>
+        <faultSequence>
+            <sequence key="boomi-mdh-fault"/>
+        </faultSequence>
+    </resource>
+
+    <!-- ======================= Query Quarantine Entries ========================= -->
+    <resource methods="POST" uri-template="/quarantine/query">
+        <inSequence>
+            <sequence key="boomi-mdh-init"/>
+            <call-template target="mdh-query-quarantine-entries">
+                <with-param name="hubBaseUrl" value="{get-property('MDH_HUB_BASE_URL')}"/>
+                <with-param name="universeId" value="{$ctx:query.param.universeId}"/>
+                <with-param name="authorization" value="{get-property('MDH_AUTHORIZATION')}"/>
+                <with-param name="repositoryId" value="{$ctx:query.param.repositoryId}"/>
+            </call-template>
+            <respond/>
+        </inSequence>
+        <faultSequence>
+            <sequence key="boomi-mdh-fault"/>
+        </faultSequence>
+    </resource>
+
+    <!-- ========================= Match Entities ================================= -->
+    <resource methods="POST" uri-template="/match">
+        <inSequence>
+            <sequence key="boomi-mdh-init"/>
+            <call-template target="mdh-match-entities">
+                <with-param name="hubBaseUrl" value="{get-property('MDH_HUB_BASE_URL')}"/>
+                <with-param name="universeId" value="{$ctx:query.param.universeId}"/>
+                <with-param name="authorization" value="{get-property('MDH_AUTHORIZATION')}"/>
+                <with-param name="repositoryId" value="{$ctx:query.param.repositoryId}"/>
+                <with-param name="ambiguousMatchSampleSize" value="{$ctx:query.param.ambiguousMatchSampleSize}"/>
+            </call-template>
+            <respond/>
+        </inSequence>
+        <faultSequence>
+            <sequence key="boomi-mdh-fault"/>
+        </faultSequence>
+    </resource>
+
+    <!-- ======================== Fetch Channel Updates =========================== -->
+    <!-- Two forms of the same operation:
+           POST .../sources/{sourceId}/updates            -> first fetch (nothing to acknowledge)
+           POST .../sources/{sourceId}/updates/{updateId}  -> acknowledge {updateId}, fetch next -->
+    <resource methods="POST" uri-template="/sources/{sourceId}/updates/{updateId}">
+        <inSequence>
+            <sequence key="boomi-mdh-init"/>
+            <call-template target="mdh-fetch-channel-updates">
+                <with-param name="hubBaseUrl" value="{get-property('MDH_HUB_BASE_URL')}"/>
+                <with-param name="universeId" value="{$ctx:query.param.universeId}"/>
+                <with-param name="sourceId" value="{$ctx:uri.var.sourceId}"/>
+                <with-param name="updateId" value="{$ctx:uri.var.updateId}"/>
+                <with-param name="authorization" value="{get-property('MDH_AUTHORIZATION')}"/>
+                <with-param name="repositoryId" value="{$ctx:query.param.repositoryId}"/>
+                <with-param name="limit" value="{$ctx:query.param.limit}"/>
+            </call-template>
+            <respond/>
+        </inSequence>
+        <faultSequence>
+            <sequence key="boomi-mdh-fault"/>
+        </faultSequence>
+    </resource>
+
+    <!-- First fetch: no trailing segment, so updateId is left empty (no acknowledgement). -->
+    <resource methods="POST" uri-template="/sources/{sourceId}/updates">
+        <inSequence>
+            <sequence key="boomi-mdh-init"/>
+            <call-template target="mdh-fetch-channel-updates">
+                <with-param name="hubBaseUrl" value="{get-property('MDH_HUB_BASE_URL')}"/>
+                <with-param name="universeId" value="{$ctx:query.param.universeId}"/>
+                <with-param name="sourceId" value="{$ctx:uri.var.sourceId}"/>
+                <with-param name="authorization" value="{get-property('MDH_AUTHORIZATION')}"/>
+                <with-param name="repositoryId" value="{$ctx:query.param.repositoryId}"/>
+                <with-param name="limit" value="{$ctx:query.param.limit}"/>
+            </call-template>
+            <respond/>
+        </inSequence>
+        <faultSequence>
+            <sequence key="boomi-mdh-fault"/>
+        </faultSequence>
+    </resource>
+
+    <!-- Fetch + Acknowledge one batch: fetch the next batch, acknowledge it, and return it to
+         the caller (consumer). Distinct segment ('next-update') avoids colliding with /updates
+         or /updates/{updateId}. Empty response body means nothing was pending. -->
+    <resource methods="POST" uri-template="/sources/{sourceId}/next-update">
+        <inSequence>
+            <sequence key="boomi-mdh-init"/>
+            <call-template target="mdh-fetch-channel-updates-ack">
+                <with-param name="hubBaseUrl" value="{get-property('MDH_HUB_BASE_URL')}"/>
+                <with-param name="universeId" value="{$ctx:query.param.universeId}"/>
+                <with-param name="sourceId" value="{$ctx:uri.var.sourceId}"/>
+                <with-param name="authorization" value="{get-property('MDH_AUTHORIZATION')}"/>
+                <with-param name="repositoryId" value="{$ctx:query.param.repositoryId}"/>
+                <with-param name="limit" value="{$ctx:query.param.limit}"/>
+            </call-template>
+            <respond/>
+        </inSequence>
+        <faultSequence>
+            <sequence key="boomi-mdh-fault"/>
+        </faultSequence>
+    </resource>
+
+    <!-- Acknowledge only (manual-ack flow): acknowledge a previously fetched batch by id,
+         without fetching the next. 5-segment path, no collision with /updates/{updateId}. -->
+    <resource methods="POST" uri-template="/sources/{sourceId}/updates/{updateId}/acknowledge">
+        <inSequence>
+            <sequence key="boomi-mdh-init"/>
+            <call-template target="mdh-acknowledge-channel-updates">
+                <with-param name="hubBaseUrl" value="{get-property('MDH_HUB_BASE_URL')}"/>
+                <with-param name="universeId" value="{$ctx:query.param.universeId}"/>
+                <with-param name="sourceId" value="{$ctx:uri.var.sourceId}"/>
+                <with-param name="updateId" value="{$ctx:uri.var.updateId}"/>
+                <with-param name="authorization" value="{get-property('MDH_AUTHORIZATION')}"/>
+                <with-param name="repositoryId" value="{$ctx:query.param.repositoryId}"/>
+            </call-template>
+            <respond/>
+        </inSequence>
+        <faultSequence>
+            <sequence key="boomi-mdh-fault"/>
+        </faultSequence>
+    </resource>
+
+    <!-- ========================= Update Golden Records ========================== -->
+    <!-- Placed last: most specific POST paths (/golden-records/query) are matched first. -->
+    <resource methods="POST" uri-template="/golden-records">
+        <inSequence>
+            <sequence key="boomi-mdh-init"/>
+            <call-template target="mdh-update-golden-records">
+                <with-param name="hubBaseUrl" value="{get-property('MDH_HUB_BASE_URL')}"/>
+                <with-param name="universeId" value="{$ctx:query.param.universeId}"/>
+                <with-param name="authorization" value="{get-property('MDH_AUTHORIZATION')}"/>
+                <with-param name="repositoryId" value="{$ctx:query.param.repositoryId}"/>
+                <with-param name="async" value="{$ctx:query.param.async}"/>
+                <with-param name="returnEntities" value="{$ctx:query.param.returnEntities}"/>
+            </call-template>
+            <respond/>
+        </inSequence>
+        <faultSequence>
+            <sequence key="boomi-mdh-fault"/>
+        </faultSequence>
+    </resource>
+
+</api>

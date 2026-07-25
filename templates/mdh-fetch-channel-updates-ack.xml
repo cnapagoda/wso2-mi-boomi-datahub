@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+<!--
+  Boomi DataHub (MDH) :: Fetch + Acknowledge one channel-update batch
+  ==================================================================
+  One-shot "consume": fetch the next batch on a source's channel, back up the payload,
+  acknowledge that batch (so Boomi will not deliver it again), then return the ORIGINAL fetched
+  batch to the caller.
+
+  Flow:
+    1. fetch    - mdh-fetch-channel-updates (updateId empty = first/no-ack fetch); body = the batch
+    2. if a batch came back:
+         a. back up the fetched batch payload into a property
+         b. acknowledge it - mdh-acknowledge-channel-updates (updateId = the fetched batch id);
+            the acknowledge response replaces the message body, which is why we backed it up
+         c. restore the backed-up batch as the response body
+    3. return the original batch (now acknowledged). If nothing was pending the fetch returns 204
+       and the empty body is passed through unchanged.
+
+  The backup/restore is the crux: the acknowledge is a second HTTP call whose response would
+  otherwise overwrite the batch, so the batch is stashed before the ack and restored after.
+
+  DELIVERY SEMANTICS: the batch is acknowledged BEFORE it is returned, so if the caller fails to
+  process the returned batch it is already marked delivered in Boomi (at-most-once). For
+  at-least-once, call mdh-fetch-channel-updates and mdh-acknowledge-channel-updates separately and
+  acknowledge only after the batch has been safely processed downstream.
+
+  After it returns, this synapse-scope property is set:
+    MDH_ACK_ID - id of the batch fetched and acknowledged (empty if nothing was pending)
+
+  Reuses mdh-fetch-channel-updates and mdh-acknowledge-channel-updates, so BOTH must be deployed.
+
+  Params:
+    hubBaseUrl    (req) e.g. https://c01-usa-east.hub.boomi.com/mdm
+    universeId    (req) universe (domain) UUID
+    sourceId      (req) target/consuming source ID
+    authorization (req) "Basic <base64(user:token)>" or "Bearer <jwt>"
+    repositoryId  (opt) JWT/bearer auth only
+    limit         (opt) max update requests in the batch (default/max 200)
+    updateId      (opt) starting ack id; normally empty (first fetch has nothing to acknowledge)
+-->
+<template name="mdh-fetch-channel-updates-ack"
+    xmlns="http://ws.apache.org/ns/synapse">
+    <parameter name="hubBaseUrl"/>
+    <parameter name="universeId"/>
+    <parameter name="sourceId"/>
+    <parameter name="authorization"/>
+    <parameter name="repositoryId"/>
+    <parameter name="limit"/>
+    <parameter name="updateId"/>
+    <sequence>
+        <!-- Keep config in properties so both nested calls can read the same values. -->
+        <property name="MDH_HUB" expression="$func:hubBaseUrl"/>
+        <property name="MDH_UNIV" expression="$func:universeId"/>
+        <property name="MDH_SRC" expression="$func:sourceId"/>
+        <property name="MDH_AUTH" expression="$func:authorization"/>
+        <property name="MDH_REPO" expression="$func:repositoryId"/>
+        <property name="MDH_LIMIT" expression="$func:limit"/>
+        <property name="MDH_START_ID" expression="$func:updateId"/>
+        <property name="MDH_ACK_ID" value=""/>
+
+        <!-- 1) Fetch the next batch (updateId empty => first/no-ack fetch). -->
+        <call-template target="mdh-fetch-channel-updates">
+            <with-param name="hubBaseUrl" value="{$ctx:MDH_HUB}"/>
+            <with-param name="universeId" value="{$ctx:MDH_UNIV}"/>
+            <with-param name="sourceId" value="{$ctx:MDH_SRC}"/>
+            <with-param name="updateId" value="{$ctx:MDH_START_ID}"/>
+            <with-param name="authorization" value="{$ctx:MDH_AUTH}"/>
+            <with-param name="repositoryId" value="{$ctx:MDH_REPO}"/>
+            <with-param name="limit" value="{$ctx:MDH_LIMIT}"/>
+        </call-template>
+
+        <!-- 2) If a <batch> came back: back up, acknowledge, restore. -->
+        <filter xpath="$body/*[local-name()='batch']">
+            <then>
+                <!-- id of the batch just fetched -->
+                <property name="MDH_ACK_ID" expression="$body/*[local-name()='batch']/@id"/>
+
+                <!-- 2a) back up the fetched batch payload -->
+                <enrich>
+                    <source clone="true" type="body"/>
+                    <target type="property" property="MDH_BATCH_BACKUP"/>
+                </enrich>
+
+                <!-- 2b) acknowledge that batch (its response replaces the body) -->
+                <call-template target="mdh-acknowledge-channel-updates">
+                    <with-param name="hubBaseUrl" value="{$ctx:MDH_HUB}"/>
+                    <with-param name="universeId" value="{$ctx:MDH_UNIV}"/>
+                    <with-param name="sourceId" value="{$ctx:MDH_SRC}"/>
+                    <with-param name="updateId" value="{$ctx:MDH_ACK_ID}"/>
+                    <with-param name="authorization" value="{$ctx:MDH_AUTH}"/>
+                    <with-param name="repositoryId" value="{$ctx:MDH_REPO}"/>
+                </call-template>
+
+                <!-- 2c) restore the original fetched batch as the response body -->
+                <enrich>
+                    <source clone="true" type="property" property="MDH_BATCH_BACKUP"/>
+                    <target type="body"/>
+                </enrich>
+            </then>
+        </filter>
+        <!-- 3) Body now holds the original <batch> (acknowledged), or the empty 204 response. -->
+    </sequence>
+</template>

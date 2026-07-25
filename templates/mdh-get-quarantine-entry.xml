@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+<!--
+  Boomi DataHub (MDH) :: Get Quarantine Entry (for source entity)
+  ========================================
+  GET {hubBaseUrl}/universes/{universeId}/quarantine/sources/{sourceId}/entities/{entityId}
+  Returns <QuarantineEntry ...> (cause/reason/fields/matchRule/entity) or a Boomi <error>.
+
+  Note: the Repository API has no "get quarantine by transactionId" GET; entries are
+        fetched by source + source entity ID. Use mdh-query-quarantine-entries to search.
+
+  Params:
+    hubBaseUrl    (req) e.g. https://c01-usa-east.hub.boomi.com/mdm
+    universeId    (req) universe (domain) UUID
+    sourceId      (req) source ID (from the Sources page)
+    entityId      (req) source entity ID (URL-encode first if it contains reserved chars)
+    authorization (req) "Basic <base64(user:token)>" or "Bearer <jwt>"
+    repositoryId  (opt) JWT/bearer auth only
+    includeData   (opt) "true" (default) returns entity data; "false" returns metadata only
+-->
+<template name="mdh-get-quarantine-entry"
+    xmlns="http://ws.apache.org/ns/synapse">
+    <parameter name="hubBaseUrl"/>
+    <parameter name="universeId"/>
+    <parameter name="sourceId"/>
+    <parameter name="entityId"/>
+    <parameter name="authorization"/>
+    <parameter name="repositoryId"/>
+    <parameter name="includeData"/>
+    <sequence>
+        <property name="uri.var.hubBaseUrl" expression="$func:hubBaseUrl"/>
+        <property name="uri.var.universeId" expression="$func:universeId"/>
+        <property name="uri.var.sourceId" expression="$func:sourceId"/>
+        <property name="uri.var.entityId" expression="$func:entityId"/>
+
+        <filter xpath="string-length(normalize-space($func:repositoryId)) &gt; 0">
+            <then>
+                <property name="uri.var.repositoryId" expression="$func:repositoryId"/>
+            </then>
+        </filter>
+        <filter xpath="string-length(normalize-space($func:includeData)) &gt; 0">
+            <then>
+                <property name="uri.var.includeData" expression="$func:includeData"/>
+            </then>
+        </filter>
+
+        <property name="Authorization" expression="$func:authorization" scope="transport"/>
+        <property name="Accept" value="application/xml" scope="transport"/>
+        <property name="HTTP_METHOD" value="GET" scope="axis2"/>
+        <property name="NO_ENTITY_BODY" value="true" scope="axis2" type="BOOLEAN"/>
+        <property name="REST_URL_POSTFIX" scope="axis2" action="remove"/>
+
+        <call>
+            <endpoint>
+                <http method="get" uri-template="{+uri.var.hubBaseUrl}/universes/{uri.var.universeId}/quarantine/sources/{uri.var.sourceId}/entities/{uri.var.entityId}{?uri.var.repositoryId,uri.var.includeData}">
+                    <timeout>
+                        <duration>60000</duration>
+                        <responseAction>fault</responseAction>
+                    </timeout>
+                    <suspendOnFailure>
+                        <initialDuration>-1</initialDuration>
+                        <progressionFactor>1</progressionFactor>
+                        <maximumDuration>0</maximumDuration>
+                    </suspendOnFailure>
+                    <markForSuspension>
+                        <errorCodes>-1</errorCodes>
+                        <retriesBeforeSuspension>0</retriesBeforeSuspension>
+                    </markForSuspension>
+                </http>
+            </endpoint>
+        </call>
+    </sequence>
+</template>

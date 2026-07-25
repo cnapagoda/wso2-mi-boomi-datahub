@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+-->
+<!--
+  Boomi DataHub (MDH) :: Acknowledge Previously Fetched Channel Updates
+  ====================================================================
+  POST {hubBaseUrl}/universes/{universeId}/sources/{sourceId}/updates/{updateId}/acknowledge
+  Acknowledges a previously fetched batch (identified by its id) WITHOUT fetching the next one.
+  Use it in a manual-acknowledge flow: fetch a batch with mdh-fetch-channel-updates, process it,
+  then acknowledge it here once it is safely handled.
+
+  Returns 200 on success. Boomi returns 404 if {updateId} is not a real batch on the channel,
+  and 400 if that batch was already acknowledged. This template sends no request body.
+
+  Params:
+    hubBaseUrl    (req) e.g. https://c01-usa-east.hub.boomi.com/mdm
+    universeId    (req) universe (domain) UUID
+    sourceId      (req) target/consuming source ID
+    updateId      (req) id of the batch to acknowledge (the <batch> "id" attribute)
+    authorization (req) "Basic <base64(user:token)>" or "Bearer <jwt>"
+    repositoryId  (opt) JWT/bearer auth only
+-->
+<template name="mdh-acknowledge-channel-updates"
+    xmlns="http://ws.apache.org/ns/synapse">
+    <parameter name="hubBaseUrl"/>
+    <parameter name="universeId"/>
+    <parameter name="sourceId"/>
+    <parameter name="updateId"/>
+    <parameter name="authorization"/>
+    <parameter name="repositoryId"/>
+    <sequence>
+        <property name="uri.var.hubBaseUrl" expression="$func:hubBaseUrl"/>
+        <property name="uri.var.universeId" expression="$func:universeId"/>
+        <property name="uri.var.sourceId" expression="$func:sourceId"/>
+        <property name="uri.var.updateId" expression="$func:updateId"/>
+
+        <filter xpath="string-length(normalize-space($func:repositoryId)) &gt; 0">
+            <then>
+                <property name="uri.var.repositoryId" expression="$func:repositoryId"/>
+            </then>
+        </filter>
+
+        <property name="Authorization" expression="$func:authorization" scope="transport"/>
+        <property name="Accept" value="application/xml" scope="transport"/>
+        <property name="HTTP_METHOD" value="POST" scope="axis2"/>
+        <property name="NO_ENTITY_BODY" value="true" scope="axis2" type="BOOLEAN"/>
+        <property name="REST_URL_POSTFIX" scope="axis2" action="remove"/>
+
+        <call>
+            <endpoint>
+                <http method="post" uri-template="{+uri.var.hubBaseUrl}/universes/{uri.var.universeId}/sources/{uri.var.sourceId}/updates/{uri.var.updateId}/acknowledge{?uri.var.repositoryId}">
+                    <timeout>
+                        <duration>60000</duration>
+                        <responseAction>fault</responseAction>
+                    </timeout>
+                    <suspendOnFailure>
+                        <initialDuration>-1</initialDuration>
+                        <progressionFactor>1</progressionFactor>
+                        <maximumDuration>0</maximumDuration>
+                    </suspendOnFailure>
+                    <markForSuspension>
+                        <errorCodes>-1</errorCodes>
+                        <retriesBeforeSuspension>0</retriesBeforeSuspension>
+                    </markForSuspension>
+                </http>
+            </endpoint>
+        </call>
+    </sequence>
+</template>
