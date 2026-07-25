@@ -2,8 +2,25 @@
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
+## What this is for
+ 
+Boomi Data Hub holds the trusted version of the records that several systems all think they own customers, products, suppliers, sites. Salesforce has "Bob Smith", the webshop
+has "robert smith", the support desk has "B. Smith". Data Hub decides those are one person, keeps one golden record, and tracks which system contributed what.
 
-Seven reusable Synapse **sequence templates** wrapping the Boomi DataHub Repository API,
+That creates two-way traffic. Source systems contribute entities inward; Data Hub propagates the resulting changes back outward to every system that subscribes to them. Something has to sit in the middle and move that traffic. These templates are for building that something on WSO2 Micro Integrator.
+
+### If you already run WSO2, you don't need Boomi Integration as well
+ 
+The common assumption when Data Hub is bought is that Boomi Integration must come with it, 
+because Data Hub is a Boomi product. Technically that isn't so. The Repository API is a
+complete data-movement surface: contributing batches, fetching channel updates, querying
+golden records, pulling quarantine and staging for review are all plain HTTP calls. The
+Boomi Data Hub connector is a convenience wrapper over that API, not a privileged path
+into it. An integration engine you already operate can do the same work.
+
+> Two honest limits. Whether Data Hub can be licensed without Integration is a commercial question for Boomi and varies by agreement — the claim here is technical, not contractual.
+
+Eleven reusable Synapse **sequence templates** wrapping the Boomi DataHub Repository API,
 plus a sample REST API and shared config/fault sequences that show how to wire them up.
 
 Each template encapsulates the one thing that's tedious and error-prone to repeat: the exact
@@ -112,7 +129,7 @@ Japan Hub Cloud 01      https://c01-jp.hub.boomi.com/mdm
 Australia Hub Cloud     https://c01-aus.hub.boomi.com/mdm
 ```
 
-**Secrets (Secure Vault)** — create two entries so credentials never sit in the XML:
+**Secrets (Secure Vault)** create two entries so credentials never sit in the XML:
 
 ```
 boomi_mdh_username   Hub Repository API username
