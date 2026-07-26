@@ -44,9 +44,7 @@ expose: `mdh-get-golden-record` (fetch one record by id), `mdh-get-quarantine-en
 quarantine entry by source and entity id) and `mdh-get-batch-update-status` (poll an
 asynchronous Update or Stage batch).
 
-> Parity is judged against Boomi's published connector documentation. Connector operation sets
-> change between releases - if you are relying on this claim, check it against the version your
-> team runs.
+> The aim is that anything you can do with the Boomi Data Hub connector inside a Boomi Integration process, you can do here in an MI sequence.
 
 ## What this is for
 
